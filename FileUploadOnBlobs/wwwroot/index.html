@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>File chunked upload test</title>
+        <script src="jquery-3.6.1.min.js"></script>
+        <script src="md5p.js"></script>
+        <script>
+            const SEGMENT_SIZE = 4096;
+
+            function clearLog() {
+                $('#messages').html('');
+            }
+
+            async function doUpload() {
+                let md5 = new MD5Hash();
+
+                const uploadInput = document.getElementById("fu");
+                if (uploadInput.files.length == 0) {
+                    alert('Please select a file!');
+                    return;
+                }
+
+                let f = uploadInput.files[0];
+                let segmentCount = f.size / SEGMENT_SIZE;
+                let maxTotalRetries = 3 * segmentCount;
+                let processedSegments = [];
+                
+                $('#messages').html(new Date() + " - Starting upload...");
+
+                for (let i = 0; i < segmentCount; i++) {
+                    let pos = i * SEGMENT_SIZE;
+                    let pos_next = Math.min(f.size, (i + 1) * SEGMENT_SIZE);
+                    let part = f.slice(pos, pos_next);
+
+                    if (!processedSegments[i]) {
+                        let data = new Uint8Array(await part.arrayBuffer());
+                        md5.update(data);
+                        processedSegments[i] = 1;
+                    }
+
+                    try {
+                        /*let resp = await $.ajax({
+                            method: 'POST',
+                            url: '/upload/fragment?position=' + pos + '&blobName=' + encodeURI(f.name),
+                            contentType: 'application/octet-stream',
+                            processData: false,
+                            data: part
+                        });*/ let resp = pos_next;
+
+                        console.log(i, resp);
+
+                        if (resp != pos_next) {
+                            let new_i = Math.floor(resp / SEGMENT_SIZE);
+                            if (new_i < i) {
+                                console.warn("Some upload failed: stepping back to block #" + new_i);
+                            } else if (new_i > segmentCount) {
+                                console.error("The remote file is bigger than the local file! Unexpected error!");
+                                maxTotalRetries = 0;
+                                // TODO: call an endpoint to remove the remote file and start over
+                            } else {
+                                console.warn("Stepping over to block #" + new_i);
+                            }
+                            i = new_i - 1;
+                            maxTotalRetries--;
+                        }
+                    } catch (e) {
+                        i--;
+                        maxTotalRetries--;
+                    }
+
+                    if (maxTotalRetries <= 0)
+                        break;
+                }
+
+                if (maxTotalRetries <= 0) {
+                    $('#messages').html(new Date() + ' - <b><span style="color: red">TOO MANY ERRORS - FAILED!</span></b>');
+                } else {
+                    // Check MD5
+                    md5.finalize();
+                    let md5_local = md5.hashHex.toUpperCase();
+                    $('#messages').html(new Date() + " - MD5 = " + md5_local);
+
+                    return; // TODO: remove
+
+                    let md5_remote = await $.get('/upload/md5?blobName=' + encodeURI(f.name));
+
+                    if (md5_remote == md5_local) {
+                        $('#messages').html(new Date() + " - Completed !");
+                    } else {
+                        $('#messages').html(new Date() + " - FAILURE - MD5 hashes do no match !");
+                    }
+                }
+            }
+        </script>
+    </head>
+    <body>
+        <h1>File chunked upload test</h1>
+
+        <label for="fu">Select file to upload: </label><input name="fu" type="file" id="fu"><br>
+        <button type="button" onclick="doUpload()">Upload</button>
+        <hr>
+        <button type="button" onclick="clearLog()">Clear</button>
+        <div id="messages"></div>
+    </body>
+</html>
