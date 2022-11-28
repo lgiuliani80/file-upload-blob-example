@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using System.Reflection.Metadata;
 using System.Security.Cryptography;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
@@ -80,6 +81,13 @@ namespace FileUploadOnBlobs.Controllers
             BlobClient bc = new BlobClient(_config["StorageAccountConnectionString"], "uploads", blobName);
             MD5 md5 = MD5.Create();
 
+            var headers = await bc.GetPropertiesAsync();
+
+            if (headers?.Value?.ContentHash != null) 
+            {
+                return Convert.ToHexString(headers.Value.ContentHash);
+            }
+
             using var br = await bc.OpenReadAsync();
 
             byte[] hashOut = new byte[16];
@@ -94,6 +102,12 @@ namespace FileUploadOnBlobs.Controllers
             }
 
             md5.TransformFinalBlock(buffer, 0, 0);
+
+            try
+            {
+                await bc.SetHttpHeadersAsync(new BlobHttpHeaders { ContentHash = md5.Hash });
+            }
+            catch (Exception) { }
 
             return Convert.ToHexString(md5.Hash!);
         }

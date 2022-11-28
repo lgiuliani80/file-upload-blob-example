@@ -26,6 +26,7 @@
                 let segmentCount = f.size / SEGMENT_SIZE;
                 let maxTotalRetries = 3 * segmentCount;
                 let processedSegments = [];
+                let skipTo = -1;
                 
                 $('#messages').html(new Date() + " - Starting upload...");
 
@@ -35,19 +36,26 @@
                     let part = f.slice(pos, pos_next);
 
                     if (!processedSegments[i]) {
+                        console.log("Updated MD5 for segment #" + i);
                         let data = new Uint8Array(await part.arrayBuffer());
                         md5.update(data);
                         processedSegments[i] = 1;
                     }
 
+                    if (i < skipTo) {
+                        continue;
+                    } else {
+                        skipTo = -1;
+                    }
+
                     try {
-                        /*let resp = await $.ajax({
+                        let resp = await $.ajax({
                             method: 'POST',
                             url: '/upload/fragment?position=' + pos + '&blobName=' + encodeURI(f.name),
                             contentType: 'application/octet-stream',
                             processData: false,
                             data: part
-                        });*/ let resp = pos_next;
+                        });
 
                         console.log(i, resp);
 
@@ -55,14 +63,15 @@
                             let new_i = Math.floor(resp / SEGMENT_SIZE);
                             if (new_i < i) {
                                 console.warn("Some upload failed: stepping back to block #" + new_i);
+                                i = new_i - 1;
                             } else if (new_i > segmentCount) {
                                 console.error("The remote file is bigger than the local file! Unexpected error!");
                                 maxTotalRetries = 0;
                                 // TODO: call an endpoint to remove the remote file and start over
                             } else {
                                 console.warn("Stepping over to block #" + new_i);
+                                skipTo = new_i;
                             }
-                            i = new_i - 1;
                             maxTotalRetries--;
                         }
                     } catch (e) {
@@ -80,16 +89,15 @@
                     // Check MD5
                     md5.finalize();
                     let md5_local = md5.hashHex.toUpperCase();
-                    $('#messages').html(new Date() + " - MD5 = " + md5_local);
+                    let md5_remote = (await $.get('/upload/md5?blobName=' + encodeURI(f.name))).toUpperCase();
 
-                    return; // TODO: remove
-
-                    let md5_remote = await $.get('/upload/md5?blobName=' + encodeURI(f.name));
+                    console.log("md5_local = ", md5_local);
+                    console.log("md5_remote = ", md5_remote);
 
                     if (md5_remote == md5_local) {
                         $('#messages').html(new Date() + " - Completed !");
                     } else {
-                        $('#messages').html(new Date() + " - FAILURE - MD5 hashes do no match !");
+                        $('#messages').html(new Date() + " - FAILURE - MD5 hashes do no match: local = " + md5_local + " - remote = " + md5_remote + " !");
                     }
                 }
             }

@@ -54,10 +54,6 @@ class MD5Hash {
             m[j] = ((m[j] <<  8) | (m[j] >>> 24)) & 0x00FF00FF | ((m[j] << 24) | (m[j] >>>  8)) & 0xFF00FF00;
         }
 
-        // Padding
-        //m[l >>> 5] |= 0x80 << (l % 32);
-        //m[(((l + 64) >>> 9) << 4) + 14] = l;
-        
         aa            = this.a;
         bb            = this.b;
         cc            = this.c;
